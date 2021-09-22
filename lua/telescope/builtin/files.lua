@@ -445,7 +445,9 @@ files.treesitter = function(opts)
   for _, definitions in ipairs(ts_locals.get_definitions(bufnr)) do
     local entries = prepare_match(definitions)
     for _, entry in ipairs(entries) do
-      table.insert(results, entry)
+      if(entry.kind ~="import") then
+        table.insert(results, entry)
+      end
     end
   end
 
