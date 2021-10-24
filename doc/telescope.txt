@@ -114,11 +114,13 @@ telescope.setup({opts})                                    *telescope.setup()*
 
         Default: {
           bottom_pane = {
-            height = 25
+            height = 25,
+            prompt_position = "top"
           },
           center = {
             height = 0.9,
             preview_cutoff = 40,
+            prompt_position = "top",
             width = 0.8
           },
           cursor = {
@@ -135,6 +137,7 @@ telescope.setup({opts})                                    *telescope.setup()*
           vertical = {
             height = 0.9,
             preview_cutoff = 40,
+            prompt_position = "bottom",
             width = 0.8
           }
         }
@@ -315,14 +318,52 @@ telescope.setup({opts})                                    *telescope.setup()*
                               complete within `timeout` milliseconds.
                               Set to false to not timeout preview.
                               Default: 250
-          - hook(s):          Function(s) that takes `(filepath, bufnr, opts)`
-                              to be run if the buffer previewer was not shown due to
-                              the respective test.
-                              Available hooks are: {mime, filesize, timeout}_hook, e.g.
-                              preview = {
-                                mime_hook = function(filepath, bufnr, opts) ... end
-                              }
-                              See `telescope/previewers/*.lua` for relevant examples.
+          - hook(s):          Function(s) that takes `(filepath, bufnr, opts)`, where opts
+                              exposes winid and ft (filetype).
+                              Available hooks (in order of priority):
+                              {filetype, mime, filesize, timeout}_hook
+                              Important: the filetype_hook must return true or false
+                              to indicate whether to continue (true) previewing or not (false),
+                              respectively.
+                              Two examples:
+                              local putils = require("telescope.previewers.utils")
+                              ... -- preview is called in telescope.setup { ... }
+                                preview = {
+                                  -- 1) Do not show previewer for certain files
+                                  filetype_hook = function(filepath, bufnr, opts)
+                                    -- you could analogously check opts.ft for filetypes
+                                    local excluded = vim.tbl_filter(function(ending)
+                                      return filepath:match(ending)
+                                    end, {
+                                      ".*%.csv",
+                                      ".*%.toml",
+                                    })
+                                    if not vim.tbl_isempty(excluded) then
+                                      putils.set_preview_message(
+                                        bufnr,
+                                        opts.winid,
+                                        string.format("I don't like %s files!",
+                                        excluded[1]:sub(5, -1))
+                                      )
+                                      return false
+                                    end
+                                    return true
+                                  end,
+                                  -- 2) Truncate lines to preview window for too large files
+                                  filesize_hook = function(filepath, bufnr, opts)
+                                    local path = require("plenary.path"):new(filepath)
+                                    -- opts exposes winid
+                                    local height = vim.api.nvim_win_get_height(opts.winid)
+                                    local lines = vim.split(path:head(height), "[\r]?\n")
+                                    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+                                  end,
+                                }
+                              The configuration recipes for relevant examples.
+                              Note: if plenary does not recognize your filetype yet --
+                              1) Please consider contributing to:
+                                 $PLENARY_REPO/data/plenary/filetypes/builtin.lua
+                              2) Register your filetype locally as per link
+                                 https://github.com/nvim-lua/plenary.nvim#plenaryfiletype
                               Default: nil
           - treesitter:       Determines whether the previewer performs treesitter
                               highlighting, which falls back to regex-based highlighting.
@@ -331,6 +372,8 @@ telescope.setup({opts})                                    *telescope.setup()*
                               `table`: table of filetypes for which to attach treesitter
                               highlighting
                               Default: true
+          - msg_bg_fillchar:  Character to fill background of unpreviewable buffers with
+                              Default: "╱"
 
 
                                      *telescope.defaults.vimgrep_arguments*
@@ -731,7 +774,7 @@ builtin.treesitter()                                    *builtin.treesitter()*
                                        hl_group
 
 
-builtin.current_buffer_fuzzy_find({opts})*builtin.current_buffer_fuzzy_find()*
+builtin.current_buffer_fuzzy_find({opts}) *builtin.current_buffer_fuzzy_find()*
     Live fuzzy search inside of the currently open buffer
 
 
@@ -1016,6 +1059,7 @@ builtin.oldfiles({opts})                                  *builtin.oldfiles()*
 
     Options: ~
         {only_cwd} (boolean)  show only files in the cwd (default: false)
+        {cwd_only} (boolean)  alias for only_cwd
 
 
 builtin.command_history({opts})                    *builtin.command_history()*
@@ -1105,6 +1149,7 @@ builtin.buffers({opts})                                    *builtin.buffers()*
         {only_cwd}              (boolean)  if true, only show buffers in the
                                            current working directory (default:
                                            false)
+        {cwd_only}              (boolean)  alias for only_cwd
         {sort_lastused}         (boolean)  Sorts current and last buffer to
                                            the top and selects the lastused
                                            (default: false)
@@ -1345,7 +1390,7 @@ builtin.lsp_workspace_symbols({opts})        *builtin.lsp_workspace_symbols()*
                                             with hl_group
 
 
-builtin.lsp_dynamic_workspace_symbols({opts})*builtin.lsp_dynamic_workspace_symbols()*
+builtin.lsp_dynamic_workspace_symbols({opts}) *builtin.lsp_dynamic_workspace_symbols()*
     Dynamically lists LSP for all workspace symbols
     - Default keymaps:
       - `<C-l>`: show autocompletion menu to prefilter your query by type of
@@ -1356,11 +1401,14 @@ builtin.lsp_dynamic_workspace_symbols({opts})*builtin.lsp_dynamic_workspace_symb
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {ignore_filename}   (boolean)  dont show filenames (default: false)
-        {show_line}         (boolean)  if true, shows the content of the line
-                                       the symbol is found on (default: false)
-        {symbol_highlights} (table)    string -> string. Matches symbol with
-                                       hl_group
+        {ignore_filename}   (boolean)       dont show filenames (default:
+                                            false)
+        {show_line}         (boolean)       if true, shows the content of the
+                                            line the symbol is found on
+                                            (default: false)
+        {symbols}           (string|table)  filter results by symbol kind(s)
+        {symbol_highlights} (table)         string -> string. Matches symbol
+                                            with hl_group
 
 
 builtin.lsp_document_diagnostics({opts})  *builtin.lsp_document_diagnostics()*
@@ -1391,7 +1439,7 @@ builtin.lsp_document_diagnostics({opts})  *builtin.lsp_document_diagnostics()*
                                           in Results
 
 
-builtin.lsp_workspace_diagnostics({opts})*builtin.lsp_workspace_diagnostics()*
+builtin.lsp_workspace_diagnostics({opts}) *builtin.lsp_workspace_diagnostics()*
     Lists LSP diagnostics for the current workspace if supported, otherwise
     searches in all open buffers
     - Fields:
@@ -1639,7 +1687,8 @@ layout_strategies.vertical()                    *layout_strategies.vertical()*
         - Change the height of Telescope's preview window
         - See |resolver.resolve_height()|
       - prompt_position:
-        - (unimplemented, but we plan on supporting)
+        - Where to place prompt window.
+        - Available Values: 'bottom', 'top'
 
 
 layout_strategies.flex()                            *layout_strategies.flex()*
@@ -1733,7 +1782,7 @@ actions.move_selection_next({prompt_bufnr})    *actions.move_selection_next()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.move_selection_previous({prompt_bufnr})*actions.move_selection_previous()*
+actions.move_selection_previous({prompt_bufnr}) *actions.move_selection_previous()*
     Move the selection to the previous entry
 
 
@@ -1749,7 +1798,7 @@ actions.move_selection_worse({prompt_bufnr})  *actions.move_selection_worse()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.move_selection_better({prompt_bufnr})*actions.move_selection_better()*
+actions.move_selection_better({prompt_bufnr}) *actions.move_selection_better()*
     Move the selection to the entry that has a better score
 
 
@@ -2018,7 +2067,7 @@ actions.delete_buffer({prompt_bufnr})                *actions.delete_buffer()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.cycle_previewers_next({prompt_bufnr})*actions.cycle_previewers_next()*
+actions.cycle_previewers_next({prompt_bufnr}) *actions.cycle_previewers_next()*
     Cycle to the next previewer if there is one available.
     This action is not mapped on default.
 
@@ -2027,7 +2076,7 @@ actions.cycle_previewers_next({prompt_bufnr})*actions.cycle_previewers_next()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.cycle_previewers_prev({prompt_bufnr})*actions.cycle_previewers_prev()*
+actions.cycle_previewers_prev({prompt_bufnr}) *actions.cycle_previewers_prev()*
     Cycle to the previous previewer if there is one available.
     This action is not mapped on default.
 
@@ -2036,7 +2085,7 @@ actions.cycle_previewers_prev({prompt_bufnr})*actions.cycle_previewers_prev()*
         {prompt_bufnr} (number)  The prompt bufnr
 
 
-actions.remove_selected_picker({prompt_bufnr})*actions.remove_selected_picker()*
+actions.remove_selected_picker({prompt_bufnr}) *actions.remove_selected_picker()*
     Removes the selected picker in |builtin.pickers|.
     This action is not mapped by default and only intended for
     |builtin.pickers|.
@@ -2076,7 +2125,7 @@ action_state.get_current_line()              *action_state.get_current_line()*
 
 
 
-action_state.get_current_picker({prompt_bufnr})*action_state.get_current_picker()*
+action_state.get_current_picker({prompt_bufnr}) *action_state.get_current_picker()*
     Gets the current picker
 
 
@@ -2096,7 +2145,7 @@ vertical split, etc. Instead of making users have to overwrite EACH of those
 every time they want to change this behavior, they can instead replace the
 `set` itself and then it will work great and they're done.
 
-action_set.shift_selection({prompt_bufnr}, {change})*action_set.shift_selection()*
+action_set.shift_selection({prompt_bufnr}, {change}) *action_set.shift_selection()*
     Move the current selection of a picker {change} rows. Handles not
     overflowing / underflowing the list.
 
@@ -2127,7 +2176,7 @@ action_set.edit({prompt_bufnr}, {command})                 *action_set.edit()*
         {command}      (string)  The command to use to open the file.
 
 
-action_set.scroll_previewer({prompt_bufnr}, {direction})*action_set.scroll_previewer()*
+action_set.scroll_previewer({prompt_bufnr}, {direction}) *action_set.scroll_previewer()*
     Scrolls the previewer up or down
 
 
@@ -2206,7 +2255,7 @@ utils.map_selections({prompt_bufnr}, {f})             *utils.map_selections()*
                                    that takes (selection) as a viable argument
 
 
-utils.get_registered_mappings({prompt_bufnr})*utils.get_registered_mappings()*
+utils.get_registered_mappings({prompt_bufnr}) *utils.get_registered_mappings()*
     Utility to collect mappings of prompt buffer in array of `{mode, keybind,
     name}`.
 
@@ -2522,7 +2571,7 @@ previewers.new_buffer_previewer()          *previewers.new_buffer_previewer()*
 
 
 
-previewers.buffer_previewer_maker({filepath}, {bufnr}, {opts})*previewers.buffer_previewer_maker()*
+previewers.buffer_previewer_maker({filepath}, {bufnr}, {opts}) *previewers.buffer_previewer_maker()*
     A universal way of reading a file into a buffer previewer. It handles async
     reading, cache, highlighting, displaying directories and provides a
     callback which can be used, to jump to a line in the buffer.
@@ -2578,7 +2627,7 @@ previewers.git_stash_diff()                      *previewers.git_stash_diff()*
 
 
 
-previewers.git_commit_diff_to_parent()*previewers.git_commit_diff_to_parent()*
+previewers.git_commit_diff_to_parent() *previewers.git_commit_diff_to_parent()*
     A previewer that shows a diff of a commit to a parent commit.
     The run command is `git --no-pager diff SHA^! -- $CURRENT_FILE`
 
@@ -2686,7 +2735,7 @@ histories.History:reset()                          *histories.History:reset()*
 
 
 
-histories.History:append({line}, {picker}, {no_reset})*histories.History:append()*
+histories.History:append({line}, {picker}, {no_reset}) *histories.History:append()*
     Append a new line to the history
 
 

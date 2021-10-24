@@ -903,10 +903,14 @@ function make_entry.gen_from_ctags(opts)
 
     local tag, file, scode, lnum
     -- ctags gives us: 'tags\tfile\tsource'
-    tag, file, scode = string.match(line, '([^\t]+)\t([^\t]+)\t/^\t?(.*)/;"\t+.*')
+    tag, file, scode = string.match(line, '([^\t]+)\t([^\t]+)\t/^?\t?(.*)/;"\t+.*')
     if not tag then
       -- hasktags gives us: 'tags\tfile\tlnum'
       tag, file, lnum = string.match(line, "([^\t]+)\t([^\t]+)\t(%d+).*")
+    end
+
+    if Path.path.sep == "\\" then
+      file = string.gsub(file, "/", "\\")
     end
 
     if opts.only_current_file and file ~= current_file then
