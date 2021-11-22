@@ -14,6 +14,10 @@ local conf = require("telescope.config").values
 local git = {}
 
 git.files = function(opts)
+  if opts.is_bare then
+    error "This operation must be run in a work tree"
+  end
+
   local show_untracked = utils.get_default(opts.show_untracked, true)
   local recurse_submodules = utils.get_default(opts.recurse_submodules, false)
   if show_untracked and recurse_submodules then
@@ -22,16 +26,14 @@ git.files = function(opts)
 
   -- By creating the entry maker after the cwd options,
   -- we ensure the maker uses the cwd options when being created.
-  opts.entry_maker = opts.entry_maker or make_entry.gen_from_file(opts)
+  opts.entry_maker = vim.F.if_nil(opts.entry_maker, make_entry.gen_from_file(opts))
+  local git_command = vim.F.if_nil(opts.git_command, { "git", "ls-files", "--exclude-standard", "--cached" })
 
   pickers.new(opts, {
     prompt_title = "Git Files",
     finder = finders.new_oneshot_job(
       vim.tbl_flatten {
-        "git",
-        "ls-files",
-        "--exclude-standard",
-        "--cached",
+        git_command,
         show_untracked and "--others" or nil,
         recurse_submodules and "--recurse-submodules" or nil,
       },
@@ -43,22 +45,12 @@ git.files = function(opts)
 end
 
 git.commits = function(opts)
-  opts.entry_maker = opts.entry_maker or make_entry.gen_from_git_commits(opts)
+  opts.entry_maker = vim.F.if_nil(opts.entry_maker, make_entry.gen_from_git_commits(opts))
+  local git_command = vim.F.if_nil(opts.git_command, { "git", "log", "--pretty=oneline", "--abbrev-commit", "--", "." })
 
   pickers.new(opts, {
     prompt_title = "Git Commits",
-
-    finder = finders.new_oneshot_job(
-      vim.tbl_flatten {
-        "git",
-        "log",
-        "--pretty=oneline",
-        "--abbrev-commit",
-        "--",
-        ".",
-      },
-      opts
-    ),
+    finder = finders.new_oneshot_job(git_command, opts),
     previewer = {
       previewers.git_commit_diff_to_parent.new(opts),
       previewers.git_commit_diff_to_head.new(opts),
@@ -80,7 +72,7 @@ git.commits = function(opts)
 end
 
 git.stash = function(opts)
-  opts.entry_maker = opts.entry_maker or make_entry.gen_from_git_stash()
+  opts.entry_maker = vim.F.if_nil(opts.entry_maker, make_entry.gen_from_git_stash())
 
   pickers.new(opts, {
     prompt_title = "Git Stash",
@@ -108,19 +100,16 @@ local get_current_buf_line = function(winnr)
 end
 
 git.bcommits = function(opts)
-  opts.current_line = not opts.current_file and get_current_buf_line(0) or nil
-  opts.current_file = opts.current_file or vim.fn.expand "%:p"
-
-  opts.entry_maker = opts.entry_maker or make_entry.gen_from_git_commits(opts)
+  opts.current_line = (opts.current_file == nil) and get_current_buf_line(0) or nil
+  opts.current_file = vim.F.if_nil(opts.current_file, vim.fn.expand "%:p")
+  opts.entry_maker = vim.F.if_nil(opts.entry_maker, make_entry.gen_from_git_commits(opts))
+  local git_command = vim.F.if_nil(opts.git_command, { "git", "log", "--pretty=oneline", "--abbrev-commit" })
 
   pickers.new(opts, {
     prompt_title = "Git BCommits",
     finder = finders.new_oneshot_job(
       vim.tbl_flatten {
-        "git",
-        "log",
-        "--pretty=oneline",
-        "--abbrev-commit",
+        git_command,
         opts.current_file,
       },
       opts
@@ -309,6 +298,10 @@ git.branches = function(opts)
 end
 
 git.status = function(opts)
+  if opts.is_bare then
+    error "This operation must be run in a work tree"
+  end
+
   local gen_new_finder = function()
     local expand_dir = utils.if_nil(opts.expand_dir, true, opts.expand_dir)
     local git_cmd = { "git", "status", "-s", "--", "." }
@@ -326,7 +319,7 @@ git.status = function(opts)
 
     return finders.new_table {
       results = output,
-      entry_maker = opts.entry_maker or make_entry.gen_from_git_status(opts),
+      entry_maker = vim.F.if_nil(opts.entry_maker, make_entry.gen_from_git_status(opts)),
     }
   end
 
@@ -366,9 +359,13 @@ local set_opts_cwd = function(opts)
   local use_git_root = utils.get_default(opts.use_git_root, true)
 
   if ret ~= 0 then
-    local output = utils.get_os_command_output({ "git", "rev-parse", "--is-inside-work-tree" }, opts.cwd)
-    if output[1] ~= "true" then
+    local in_worktree = utils.get_os_command_output({ "git", "rev-parse", "--is-inside-work-tree" }, opts.cwd)
+    local in_bare = utils.get_os_command_output({ "git", "rev-parse", "--is-bare-repository" }, opts.cwd)
+
+    if in_worktree[1] ~= "true" and in_bare[1] ~= "true" then
       error(opts.cwd .. " is not a git directory")
+    elseif in_worktree[1] ~= "true" and in_bare[1] == "true" then
+      opts.is_bare = true
     end
   else
     if use_git_root then
@@ -380,7 +377,7 @@ end
 local function apply_checks(mod)
   for k, v in pairs(mod) do
     mod[k] = function(opts)
-      opts = opts or {}
+      opts = vim.F.if_nil(opts, {})
 
       set_opts_cwd(opts)
       v(opts)
