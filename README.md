@@ -41,8 +41,17 @@ Telescope Wiki</sub>
 
 This section should guide you to run your first builtin pickers.
 
+<<<<<<< HEAD
 [Neovim (v0.5.1)](https://github.com/neovim/neovim/releases/tag/v0.5.1) or the
 latest neovim nighly commit is required for `telescope.nvim` to work.
+=======
+[Neovim (v0.7.0)](https://github.com/neovim/neovim/releases/tag/v0.7.0) or the
+latest neovim nightly commit is required for `telescope.nvim` to work.
+
+### Required dependencies
+
+- [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) is required.
+>>>>>>> 85d95dfdddba7077257a5fa3eb6dd57caf12579f
 
 ### Suggested dependencies
 
@@ -259,7 +268,10 @@ Built-in functions. Ready to be bound to any key you like.
 | `builtin.git_files`                 | Fuzzy search through the output of `git ls-files` command, respects .gitignore, optionally ignores untracked files                |
 | `builtin.grep_string`               | Searches for the string under your cursor in your current working directory                                                       |
 | `builtin.live_grep`                 | Search for a string in your current working directory and get results live as you type (respecting .gitignore)                    |
+<<<<<<< HEAD
 | `builtin.file_browser`              | Lists files and folders in your current working directory, open files, navigate your filesystem, and create new files and folders |
+=======
+>>>>>>> 85d95dfdddba7077257a5fa3eb6dd57caf12579f
 
 ### Vim Pickers
 
@@ -276,6 +288,10 @@ Built-in functions. Ready to be bound to any key you like.
 | `builtin.marks`                     | Lists vim marks and their value                                                                                                                             |
 | `builtin.colorscheme`               | Lists available colorschemes and applies them on `<cr>`                                                                                                     |
 | `builtin.quickfix`                  | Lists items in the quickfix list                                                                                                                            |
+<<<<<<< HEAD
+=======
+| `builtin.quickfixhistory`           | Lists all quickfix lists in your history and open them with `builtin.quickfix`                                                                              |
+>>>>>>> 85d95dfdddba7077257a5fa3eb6dd57caf12579f
 | `builtin.loclist`                   | Lists items from the current window's location list                                                                                                         |
 | `builtin.jumplist`                  | Lists Jump List entries                                                                                                                                     |
 | `builtin.vim_options`               | Lists vim options, allows you to edit the current value on `<cr>`                                                                                           |
@@ -298,10 +314,14 @@ Built-in functions. Ready to be bound to any key you like.
 | `builtin.lsp_document_symbols`              | Lists LSP document symbols in the current buffer                                                                          |
 | `builtin.lsp_workspace_symbols`             | Lists LSP document symbols in the current workspace                                                                       |
 | `builtin.lsp_dynamic_workspace_symbols`     | Dynamically Lists LSP for all workspace symbols                                                                           |
+<<<<<<< HEAD
 | `builtin.lsp_code_actions`                  | Lists any LSP actions for the word under the cursor, that can be triggered with `<cr>`                                    |
 | `builtin.lsp_range_code_actions`            | Lists any LSP actions for a given range, that can be triggered with `<cr>`                                                |
 | `builtin.lsp_document_diagnostics`          | Lists LSP diagnostics for the current buffer                                                                              |
 | `builtin.lsp_workspace_diagnostics`         | Lists LSP diagnostics for the current workspace if supported, otherwise searches in all open buffers                      |
+=======
+| `builtin.diagnostics`                       | Lists Diagnostics for all open buffers or a specific buffer. Use option `bufnr=0` for current buffer.                     |
+>>>>>>> 85d95dfdddba7077257a5fa3eb6dd57caf12579f
 | `builtin.lsp_implementations`               | Goto the implementation of the word under the cursor if there's only one, otherwise show all options in Telescope         |
 | `builtin.lsp_definitions`                   | Goto the definition of the word under the cursor, if there's only one, otherwise show all options in Telescope            |
 | `builtin.lsp_type_definitions`              | Goto the definition of the type of the word under the cursor, if there's only one, otherwise show all options in Telescope|
@@ -334,6 +354,7 @@ Built-in functions. Ready to be bound to any key you like.
 
 ## Previewers
 
+<<<<<<< HEAD
 | Previewers                         | Description                                                     |
 |------------------------------------|-----------------------------------------------------------------|
 | `previewers.vim_buffer_cat.new`    | Default previewer for files. Uses vim buffers                   |
@@ -342,6 +363,16 @@ Built-in functions. Ready to be bound to any key you like.
 | `previewers.cat.new`               | Deprecated previewer for files. Uses `cat`/`bat`                |
 | `previewers.vimgrep.new`           | Deprecated previewer for grep and similar. Uses `cat`/`bat`     |
 | `previewers.qflist.new`            | Deprecated previewer for qflist. Uses `cat`/`bat`               |
+=======
+| Previewers                         | Description                                               |
+|------------------------------------|-----------------------------------------------------------|
+| `previewers.vim_buffer_cat.new`    | Default previewer for files. Uses vim buffers             |
+| `previewers.vim_buffer_vimgrep.new`| Default previewer for grep and similar. Uses vim buffers  |
+| `previewers.vim_buffer_qflist.new` | Default previewer for qflist. Uses vim buffers            |
+| `previewers.cat.new`               | Terminal previewer for files. Uses `cat`/`bat`            |
+| `previewers.vimgrep.new`           | Terminal previewer for grep and similar. Uses `cat`/`bat` |
+| `previewers.qflist.new`            | Terminal previewer for qflist. Uses `cat`/`bat`           |
+>>>>>>> 85d95dfdddba7077257a5fa3eb6dd57caf12579f
 
 The default previewers are from now on `vim_buffer_` previewers. They use vim
 buffers for displaying files and use tree-sitter or regex for file highlighting.

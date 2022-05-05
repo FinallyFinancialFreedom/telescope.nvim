@@ -31,12 +31,7 @@ end
 
 local internal = {}
 
--- TODO: What the heck should we do for accepting this.
---  vim.fn.setreg("+", "nnoremap $TODO :lua require('telescope.builtin').<whatever>()<CR>")
--- TODO: Can we just do the names instead?
 internal.builtin = function(opts)
-  opts.path_display = utils.get_default(opts.path_display, "hidden")
-  opts.ignore_filename = utils.get_default(opts.ignore_filename, true)
   opts.include_extensions = utils.get_default(opts.include_extensions, false)
 
   local objs = {}
@@ -55,15 +50,20 @@ internal.builtin = function(opts)
     title = "Telescope Pickers"
     for ext, funcs in pairs(require("telescope").extensions) do
       for func_name, func_obj in pairs(funcs) do
-        local debug_info = debug.getinfo(func_obj)
-        table.insert(objs, {
-          filename = string.sub(debug_info.source, 2),
-          text = string.format("%s : %s", ext, func_name),
-        })
+        -- Only include exported functions whose name doesn't begin with an underscore
+        if type(func_obj) == "function" and string.sub(func_name, 0, 1) ~= "_" then
+          local debug_info = debug.getinfo(func_obj)
+          table.insert(objs, {
+            filename = string.sub(debug_info.source, 2),
+            text = string.format("%s : %s", ext, func_name),
+          })
+        end
       end
     end
   end
 
+  opts.bufnr = vim.api.nvim_get_current_buf()
+  opts.winnr = vim.api.nvim_get_current_win()
   pickers.new(opts, {
     prompt_title = title,
     finder = finders.new_table {
@@ -81,7 +81,27 @@ internal.builtin = function(opts)
     previewer = previewers.builtin.new(opts),
     sorter = conf.generic_sorter(opts),
     attach_mappings = function(_)
-      actions.select_default:replace(actions.run_builtin)
+      actions.select_default:replace(function(_)
+        local selection = action_state.get_selected_entry()
+        if not selection then
+          utils.__warn_no_selection "builtin.builtin"
+          return
+        end
+
+        -- we do this to avoid any surprises
+        opts.include_extensions = nil
+
+        if string.match(selection.text, " : ") then
+          -- Call appropriate function from extensions
+          local split_string = vim.split(selection.text, " : ")
+          local ext = split_string[1]
+          local func = split_string[2]
+          require("telescope").extensions[ext][func](opts)
+        else
+          -- Call appropriate telescope builtin
+          require("telescope.builtin")[selection.text](opts)
+        end
+      end)
       return true
     end,
   }):find()
@@ -93,12 +113,18 @@ internal.resume = function(opts)
 
   local cached_pickers = state.get_global_key "cached_pickers"
   if cached_pickers == nil or vim.tbl_isempty(cached_pickers) then
-    print "No picker(s) cached."
+    utils.notify("builtin.resume", {
+      msg = "No cached picker(s).",
+      level = "INFO",
+    })
     return
   end
   local picker = cached_pickers[opts.cache_index]
   if picker == nil then
-    print(string.format("Index too large as there are only %s pickers cached", #cached_pickers))
+    utils.notify("builtin.resume", {
+      msg = string.format("Index too large as there are only '%s' pickers cached", #cached_pickers),
+      level = "ERROR",
+    })
     return
   end
   -- reset layout strategy and get_window_options if default as only one is valid
@@ -124,7 +150,10 @@ end
 internal.pickers = function(opts)
   local cached_pickers = state.get_global_key "cached_pickers"
   if cached_pickers == nil or vim.tbl_isempty(cached_pickers) then
-    print "No picker(s) cached."
+    utils.notify("builtin.pickers", {
+      msg = "No cached picker(s).",
+      level = "INFO",
+    })
     return
   end
 
@@ -149,9 +178,10 @@ internal.pickers = function(opts)
       actions.select_default:replace(function(prompt_bufnr)
         local current_picker = action_state.get_current_picker(prompt_bufnr)
         local selection_index = current_picker:get_index(current_picker:get_selection_row())
-        actions._close(prompt_bufnr, cached_pickers[selection_index].initial_mode == "insert")
+        actions.close(prompt_bufnr)
         opts.cache_picker = opts._cache_picker
         opts["cache_index"] = selection_index
+        opts["initial_mode"] = cached_pickers[selection_index].initial_mode
         internal.resume(opts)
       end)
       map("i", "<C-x>", actions.remove_selected_picker)
@@ -193,7 +223,7 @@ internal.planets = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.planets"
           return
         end
 
@@ -223,10 +253,11 @@ internal.symbols = function(opts)
   end
 
   if #files == 0 then
-    print(
-      "No sources found! Check out https://github.com/nvim-telescope/telescope-symbols.nvim "
-        .. "for some prebuild symbols or how to create you own symbol source."
-    )
+    utils.notify("builtin.symbols", {
+      msg = "No sources found! Check out https://github.com/nvim-telescope/telescope-symbols.nvim "
+        .. "for some prebuild symbols or how to create you own symbol source.",
+      level = "ERROR",
+    })
     return
   end
 
@@ -245,7 +276,7 @@ internal.symbols = function(opts)
 
   local results = {}
   for _, source in ipairs(sources) do
-    local data = vim.fn.json_decode(Path:new(source):read())
+    local data = vim.json.decode(Path:new(source):read())
     for _, entry in ipairs(data) do
       table.insert(results, entry)
     end
@@ -287,6 +318,15 @@ internal.commands = function(opts)
           table.insert(commands, cmd)
         end
 
+        local need_buf_command = vim.F.if_nil(opts.show_buf_command, true)
+
+        if need_buf_command then
+          local buf_command_iter = vim.api.nvim_buf_get_commands(0, {})
+          buf_command_iter[true] = nil -- remove the redundant entry
+          for _, cmd in pairs(buf_command_iter) do
+            table.insert(commands, cmd)
+          end
+        end
         return commands
       end)(),
 
@@ -297,7 +337,7 @@ internal.commands = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.commands"
           return
         end
 
@@ -319,7 +359,8 @@ internal.commands = function(opts)
 end
 
 internal.quickfix = function(opts)
-  local locations = vim.fn.getqflist()
+  local qf_identifier = opts.id or vim.F.if_nil(opts.nr, "$")
+  local locations = vim.fn.getqflist({ [opts.id and "id" or "nr"] = qf_identifier, items = true }).items
 
   if vim.tbl_isempty(locations) then
     return
@@ -333,6 +374,65 @@ internal.quickfix = function(opts)
     },
     previewer = conf.qflist_previewer(opts),
     sorter = conf.generic_sorter(opts),
+  }):find()
+end
+
+internal.quickfixhistory = function(opts)
+  local qflists = {}
+  for i = 1, 10 do -- (n)vim keeps at most 10 quickfix lists in full
+    -- qf weirdness: id = 0 gets id of quickfix list nr
+    local qflist = vim.fn.getqflist { nr = i, id = 0, title = true, items = true }
+    if not vim.tbl_isempty(qflist.items) then
+      table.insert(qflists, qflist)
+    end
+  end
+  local entry_maker = opts.make_entry
+    or function(entry)
+      return {
+        value = entry.title or "Untitled",
+        ordinal = entry.title or "Untitled",
+        display = entry.title or "Untitled",
+        nr = entry.nr,
+        id = entry.id,
+        items = entry.items,
+      }
+    end
+  local qf_entry_maker = make_entry.gen_from_quickfix(opts)
+  pickers.new(opts, {
+    prompt_title = "Quickfix History",
+    finder = finders.new_table {
+      results = qflists,
+      entry_maker = entry_maker,
+    },
+    previewer = previewers.new_buffer_previewer {
+      title = "Quickfix List Preview",
+      dyn_title = function(_, entry)
+        return entry.title
+      end,
+
+      get_buffer_by_name = function(_, entry)
+        return "quickfixlist_" .. tostring(entry.nr)
+      end,
+
+      define_preview = function(self, entry)
+        if self.state.bufname then
+          return
+        end
+        local entries = vim.tbl_map(function(i)
+          return qf_entry_maker(i):display()
+        end, entry.items)
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, entries)
+      end,
+    },
+    sorter = conf.generic_sorter(opts),
+    attach_mappings = function(_, _)
+      action_set.select:replace(function(prompt_bufnr)
+        local nr = action_state.get_selected_entry().nr
+        actions.close(prompt_bufnr)
+        internal.quickfix { nr = nr }
+      end)
+      return true
+    end,
   }):find()
 end
 
@@ -485,7 +585,7 @@ internal.vim_options = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.vim_options"
           return
         end
 
@@ -583,13 +683,15 @@ internal.help_tags = function(opts)
         if not line:match "^!_TAG_" then
           local fields = vim.split(line, delimiter, true)
           if #fields == 3 and not tags_map[fields[1]] then
-            table.insert(tags, {
-              name = fields[1],
-              filename = help_files[fields[2]],
-              cmd = fields[3],
-              lang = lang,
-            })
-            tags_map[fields[1]] = true
+            if fields[1] ~= "help-tags" or fields[2] ~= "tags" then
+              table.insert(tags, {
+                name = fields[1],
+                filename = help_files[fields[2]],
+                cmd = fields[3],
+                lang = lang,
+              })
+              tags_map[fields[1]] = true
+            end
           end
         end
       end
@@ -616,7 +718,7 @@ internal.help_tags = function(opts)
       action_set.select:replace(function(_, cmd)
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.help_tags"
           return
         end
 
@@ -624,7 +726,7 @@ internal.help_tags = function(opts)
         if cmd == "default" or cmd == "horizontal" then
           vim.cmd("help " .. selection.value)
         elseif cmd == "vertical" then
-          vim.cmd("vert bo help " .. selection.value)
+          vim.cmd("vert help " .. selection.value)
         elseif cmd == "tab" then
           vim.cmd("tab help " .. selection.value)
         end
@@ -643,6 +745,7 @@ internal.man_pages = function(opts)
     return is_darwin and { "apropos", " " } or { "apropos", "" }
   end)
   opts.entry_maker = opts.entry_maker or make_entry.gen_from_apropos(opts)
+  opts.env = { PATH = vim.env.PATH, MANPATH = vim.env.MANPATH }
 
   pickers.new(opts, {
     prompt_title = "Man",
@@ -653,7 +756,7 @@ internal.man_pages = function(opts)
       action_set.select:replace(function(_, cmd)
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.man_pages"
           return
         end
 
@@ -662,7 +765,7 @@ internal.man_pages = function(opts)
         if cmd == "default" or cmd == "horizontal" then
           vim.cmd("Man " .. args)
         elseif cmd == "vertical" then
-          vim.cmd("vert bo Man " .. args)
+          vim.cmd("vert Man " .. args)
         elseif cmd == "tab" then
           vim.cmd("tab Man " .. args)
         end
@@ -704,13 +807,16 @@ internal.reloader = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.reloader"
           return
         end
 
         actions.close(prompt_bufnr)
         require("plenary.reload").reload_module(selection.value)
-        print(string.format("[%s] - module reloaded", selection.value))
+        utils.notify("builtin.reloader", {
+          msg = string.format("[%s] - module reloaded", selection.value),
+          level = "INFO",
+        })
       end)
 
       return true
@@ -786,6 +892,7 @@ internal.buffers = function(opts)
 end
 
 internal.colorscheme = function(opts)
+  local before_background = vim.o.background
   local before_color = vim.api.nvim_exec("colorscheme", true)
   local need_restore = true
 
@@ -857,7 +964,7 @@ internal.colorscheme = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.colorscheme"
           return
         end
 
@@ -876,6 +983,7 @@ internal.colorscheme = function(opts)
     picker.close_windows = function(status)
       close_windows(status)
       if need_restore then
+        vim.o.background = before_background
         vim.cmd("colorscheme " .. before_color)
       end
     end
@@ -899,6 +1007,7 @@ internal.marks = function(opts)
     },
     previewer = conf.grep_previewer(opts),
     sorter = conf.generic_sorter(opts),
+    push_cursor_on_edit = true,
   }):find()
 end
 
@@ -934,39 +1043,47 @@ end
 
 -- TODO: make filtering include the mapping and the action
 internal.keymaps = function(opts)
-  local modes = { "n", "i", "c" }
-  local keymaps_table = {}
+  opts.modes = vim.F.if_nil(opts.modes, { "n", "i", "c", "x" })
+  opts.show_plug = vim.F.if_nil(opts.show_plug, true)
 
-  for _, mode in pairs(modes) do
-    local global = vim.api.nvim_get_keymap(mode)
-    for _, keymap in pairs(global) do
-      table.insert(keymaps_table, keymap)
-    end
-    local buf_local = vim.api.nvim_buf_get_keymap(0, mode)
-    for _, keymap in pairs(buf_local) do
-      table.insert(keymaps_table, keymap)
+  local keymap_encountered = {} -- used to make sure no duplicates are inserted into keymaps_table
+  local keymaps_table = {}
+  local max_len_lhs = 0
+
+  -- helper function to populate keymaps_table and determine max_len_lhs
+  local function extract_keymaps(keymaps)
+    for _, keymap in pairs(keymaps) do
+      local keymap_key = keymap.buffer .. keymap.mode .. keymap.lhs -- should be distinct for every keymap
+      if not keymap_encountered[keymap_key] then
+        keymap_encountered[keymap_key] = true
+        if opts.show_plug or not string.find(keymap.lhs, "<Plug>") then
+          table.insert(keymaps_table, keymap)
+          max_len_lhs = math.max(max_len_lhs, #utils.display_termcodes(keymap.lhs))
+        end
+      end
     end
   end
+
+  for _, mode in pairs(opts.modes) do
+    local global = vim.api.nvim_get_keymap(mode)
+    local buf_local = vim.api.nvim_buf_get_keymap(0, mode)
+    extract_keymaps(global)
+    extract_keymaps(buf_local)
+  end
+  opts.width_lhs = max_len_lhs + 1
 
   pickers.new(opts, {
     prompt_title = "Key Maps",
     finder = finders.new_table {
       results = keymaps_table,
-      entry_maker = function(line)
-        return {
-          valid = line ~= "",
-          value = line,
-          ordinal = utils.display_termcodes(line.lhs) .. line.rhs,
-          display = line.mode .. " " .. utils.display_termcodes(line.lhs) .. " " .. line.rhs,
-        }
-      end,
+      entry_maker = opts.entry_maker or make_entry.gen_from_keymaps(opts),
     },
     sorter = conf.generic_sorter(opts),
     attach_mappings = function(prompt_bufnr)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.keymaps"
           return
         end
 
@@ -1017,7 +1134,7 @@ internal.highlights = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.highlights"
           return
         end
 
@@ -1080,7 +1197,8 @@ internal.autocommands = function(opts)
     end
 
     if current_ft and cmd then
-      source_file, source_lnum = line:match "Last set from (.*) line (.*)"
+      source_file = line:match "Last set from (.*) line %d*$" or line:match "Last set from (.*)$"
+      source_lnum = line:match "line (%d*)$" or "1"
       if source_file then
         local autocmd = {}
         autocmd.event = current_event
@@ -1113,7 +1231,7 @@ internal.autocommands = function(opts)
       action_set.select:replace(function(_, type)
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.autocommands"
           return
         end
 
@@ -1127,10 +1245,6 @@ internal.autocommands = function(opts)
 end
 
 internal.spell_suggest = function(opts)
-  if not vim.wo.spell then
-    return false
-  end
-
   local cursor_word = vim.fn.expand "<cword>"
   local suggestions = vim.fn.spellsuggest(cursor_word)
 
@@ -1144,7 +1258,7 @@ internal.spell_suggest = function(opts)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         if selection == nil then
-          print "[telescope] Nothing currently selected"
+          utils.__warn_no_selection "builtin.spell_suggest"
           return
         end
 
@@ -1176,7 +1290,10 @@ internal.tagstack = function(opts)
   end
 
   if vim.tbl_isempty(tags) then
-    print "No tagstack available"
+    utils.notify("builtin.tagstack", {
+      msg = "No tagstack available",
+      level = "WARN",
+    })
     return
   end
 

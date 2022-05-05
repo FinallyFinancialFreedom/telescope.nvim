@@ -93,8 +93,8 @@ local layout_config_defaults = {
   },
 
   center = {
-    width = 0.8,
-    height = 0.9,
+    width = 0.5,
+    height = 0.4,
     preview_cutoff = 40,
     prompt_position = "top",
   },
@@ -108,6 +108,7 @@ local layout_config_defaults = {
   bottom_pane = {
     height = 25,
     prompt_position = "top",
+    preview_cutoff = 120,
   },
 }
 
@@ -150,6 +151,25 @@ append(
   Available options are:
   - "descending" (default)
   - "ascending"]]
+)
+
+append(
+  "tiebreak",
+  function(current_entry, existing_entry, _)
+    return #current_entry.ordinal < #existing_entry.ordinal
+  end,
+  [[
+  A function that determines how to break a tie when two entries have
+  the same score.
+  Having a function that always returns false would keep the entries in
+  the order they are found, so existing_entry before current_entry.
+  Vice versa always returning true would place the current_entry
+  before the existing_entry.
+
+  Signature: function(current_entry, existing_entry, prompt) -> boolean
+
+  Default: function that breaks the tie based on the length of the
+           entry's ordinal]]
 )
 
 append(
@@ -217,6 +237,15 @@ append(
 )
 
 append(
+  "wrap_results",
+  false,
+  [[
+  Word wrap the search results
+
+  Default: false]]
+)
+
+append(
   "prompt_prefix",
   "> ",
   [[
@@ -242,6 +271,18 @@ append(
   Prefix in front of each result entry. Current selection not included.
 
   Default: '  ']]
+)
+
+append(
+  "multi_icon",
+  "+",
+  [[
+  Symbol to add in front of a multi-selected result entry.
+  Replaces final character of |telescope.defaults.selection_caret| and
+  |telescope.defaults.entry_prefix| as appropriate.
+  To have no icon, set to the empty string.
+
+  Default: '+']]
 )
 
 append(
@@ -274,7 +315,9 @@ append(
   - "tail"      only display the file name, and not the path
   - "absolute"  display absolute paths
   - "smart"     remove as much from the path as possible to only show
-                the difference between the displayed paths
+                the difference between the displayed paths.
+                Warning: The nature of the algorithm might have a negative
+                performance impact!
   - "shorten"   only display the first character of each directory in
                 the path
   - "truncate"  truncates the start of the path when the whole path will
@@ -331,6 +374,7 @@ append(
 append(
   "get_status_text",
   function(self)
+    local ww = #(self:get_multi_selection())
     local xx = (self.stats.processed or 0) - (self.stats.filtered or 0)
     local yy = self.stats.processed or 0
     if xx == 0 and yy == 0 then
@@ -343,7 +387,11 @@ append(
     -- else
     --   status_icon = "*"
     -- end
-    return string.format("%s / %s", xx, yy)
+    if ww == 0 then
+      return string.format("%s / %s", xx, yy)
+    else
+      return string.format("%s / %s / %s", ww, xx, yy)
+    end
   end,
   [[
   A function that determines what the virtual text looks like.
@@ -374,6 +422,27 @@ append(
 )
 
 append(
+  "results_title",
+  "Results",
+  [[
+  Defines the default title of the results window. A false value
+  can be used to hide the title altogether.
+
+  Default: "Results"]]
+)
+
+append(
+  "prompt_title",
+  "Prompt",
+  [[
+  Defines the default title of the prompt window. A false value
+  can be used to hide the title altogether. Most of the times builtins
+  define a prompt_title which will be prefered over this default.
+
+  Default: "Prompt"]]
+)
+
+append(
   "history",
   {
     path = vim.fn.stdpath "data" .. os_sep .. "telescope_history",
@@ -400,7 +469,7 @@ append(
                default: stdpath("data")/telescope_history
     - limit:   The amount of entries that will be written in the
                history.
-               Warning: If limit is set to nil it will grown unbound.
+               Warning: If limit is set to nil it will grow unbound.
                default: 100
     - handler: A lua function that implements the history.
                This is meant as a developer setting for extensions to
@@ -583,7 +652,8 @@ append(
   "color_devicons",
   true,
   [[
-  Boolean if devicons should be enabled or not.
+  Boolean if devicons should be enabled or not. If set to false, the
+  "TelescopeResultsFileIcon" highlight group is used.
   Hint: Coloring only works if |termguicolors| is enabled.
 
   Default: true]]
@@ -643,6 +713,16 @@ append(
       ...,
       ["jj"] = { "<esc>", type = "command" },
       ["kk"] = { "<cmd>echo \"Hello, World!\"<cr>", type = "command" },)
+      ...,
+
+  You can also add additional options for mappings of any type
+  ("action" and "command"). For example:
+
+      ...,
+      ["<C-j>"] = {
+        action = actions.move_selection_next,
+        opts = { nowait = true, silent = true }
+      },
       ...,
   ]]
 )

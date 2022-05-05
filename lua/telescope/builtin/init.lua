@@ -1,6 +1,6 @@
 ---@tag telescope.builtin
 
----@config { ['field_heading'] = "Options" }
+---@config { ['field_heading'] = "Options", ["module"] = "telescope.builtin" }
 
 ---@brief [[
 --- Telescope Builtins is a collection of community maintained pickers to support common workflows. It can be used as
@@ -26,9 +26,8 @@
 --- </code>
 ---@brief ]]
 
-if 1 ~= vim.fn.has "nvim-0.5.1" then
-  vim.api.nvim_err_writeln "This plugins requires neovim 0.5.1"
-  vim.api.nvim_err_writeln "Please update your neovim."
+if 1 ~= vim.fn.has "nvim-0.7.0" then
+  vim.api.nvim_err_writeln "Telescope.nvim requires at least nvim-0.7.0. See `:h telescope.changelog-1851`"
   return
 end
 
@@ -56,6 +55,8 @@ end
 ---@field cwd string: root dir to search from (default: cwd, use utils.buffer_dir() to search relative to open buffer)
 ---@field grep_open_files boolean: if true, restrict search to open files only, mutually exclusive with `search_dirs`
 ---@field search_dirs table: directory/directories to search in, mutually exclusive with `grep_open_files`
+---@field glob_pattern string: argument to be used with `--glob`, e.g. "*.toml", can use the opposite "!*.toml"
+---@field type_filter string: argument to be used with `--type`, e.g. "rust", see `rg --type-list`
 ---@field additional_args function: function(opts) which returns a table of additional arguments to be passed on
 ---@field max_results number: define a upper result value
 ---@field disable_coordinates boolean: don't show the line & row numbers (default: false)
@@ -86,21 +87,6 @@ builtin.find_files = require_on_exported_call("telescope.builtin.files").find_fi
 --- This is an alias for the `find_files` picker
 builtin.fd = builtin.find_files
 
---- Lists files and folders in your current working directory, open files, navigate your filesystem, and create new
---- files and folders
---- - Default keymaps:
----   - `<cr>`: opens the currently selected file, or navigates to the currently selected directory
----   - `<C-e>`: creates new file in current directory, creates new directory if the name contains a trailing '/'
----     - Note: you can create files nested into several directories with `<C-e>`, i.e. `lua/telescope/init.lua` would
----       create the file `init.lua` inside of `lua/telescope` and will create the necessary folders (similar to how
----       `mkdir -p` would work) if they do not already exist
----@param opts table: options to pass to the picker
----@field cwd string: root dir to browse from (default: cwd, use utils.buffer_dir() to search relative to open buffer)
----@field depth number: file tree depth to display (default: 1)
----@field dir_icon string: change the icon for a directory. (default: )
----@field hidden boolean: determines whether to show hidden files or not (default: false)
-builtin.file_browser = require_on_exported_call("telescope.builtin.files").file_browser
-
 --- Lists function names, variables, and other symbols from treesitter queries
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by kind of ts node you want to see (i.e. `:var:`)
@@ -121,6 +107,7 @@ builtin.current_buffer_fuzzy_find = require_on_exported_call("telescope.builtin.
 ---@field ctags_file string: specify a particular ctags file to use
 ---@field show_line boolean: if true, shows the content of the line the tag is found on in the picker (default: true)
 ---@field only_sort_tags boolean: if true we will only sort tags (default: false)
+---@field fname_width number: defines the width of the filename section (default: 30)
 builtin.tags = require_on_exported_call("telescope.builtin.files").tags
 
 --- Lists all of the tags for the currently open buffer, with a preview
@@ -129,6 +116,7 @@ builtin.tags = require_on_exported_call("telescope.builtin.files").tags
 ---@field ctags_file string: specify a particular ctags file to use
 ---@field show_line boolean: if true, shows the content of the line the tag is found on in the picker (default: true)
 ---@field only_sort_tags boolean: if true we will only sort tags (default: false)
+---@field fname_width number: defines the width of the filename section (default: 30)
 builtin.current_buffer_tags = require_on_exported_call("telescope.builtin.files").current_buffer_tags
 
 --
@@ -204,6 +192,7 @@ builtin.git_status = require_on_exported_call("telescope.builtin.git").status
 ---@param opts table: options to pass to the picker
 ---@field cwd string: specify the path of the repo
 ---@field use_git_root boolean: if we should use git root as cwd or the cwd (important for submodule) (default: true)
+---@field show_branch boolean: if we should display the branch name for git stash entries (default: true)
 builtin.git_stash = require_on_exported_call("telescope.builtin.git").stash
 
 --
@@ -214,7 +203,6 @@ builtin.git_stash = require_on_exported_call("telescope.builtin.git").stash
 
 --- Lists all of the community maintained pickers built into Telescope
 ---@param opts table: options to pass to the picker
----@field ignore_filename boolean: dont show filenames (default: true)
 ---@field include_extensions boolean: if true will show the pickers of the installed extensions (default: false)
 builtin.builtin = require_on_exported_call("telescope.builtin.internal").builtin
 
@@ -225,7 +213,7 @@ builtin.builtin = require_on_exported_call("telescope.builtin.internal").builtin
 ---@field cache_index number: what picker to resume, where 1 denotes most recent (default: 1)
 builtin.resume = require_on_exported_call("telescope.builtin.internal").resume
 
---- Opens a picker over previously cached pickers in there preserved states (incl. multi selections)
+--- Opens a picker over previously cached pickers in their preserved states (incl. multi selections)
 --- - Default keymaps:
 ---   - `<C-x>`: delete the selected cached picker
 --- - Notes:
@@ -250,16 +238,25 @@ builtin.symbols = require_on_exported_call("telescope.builtin.internal").symbols
 
 --- Lists available plugin/user commands and runs them on `<cr>`
 ---@param opts table: options to pass to the picker
+---@field show_buf_command boolean: show buf local command (Default: true)
 builtin.commands = require_on_exported_call("telescope.builtin.internal").commands
 
 --- Lists items in the quickfix list, jumps to location on `<cr>`
 ---@param opts table: options to pass to the picker
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
+---@field nr number: specify the quickfix list number
 builtin.quickfix = require_on_exported_call("telescope.builtin.internal").quickfix
+
+--- Lists all quickfix lists in your history and open them with `builtin.quickfix`. It seems that neovim
+--- only keeps the full history for 10 lists
+---@param opts table: options to pass to the picker
+builtin.quickfixhistory = require_on_exported_call("telescope.builtin.internal").quickfixhistory
 
 --- Lists items from the current window's location list, jumps to location on `<cr>`
 ---@param opts table: options to pass to the picker
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
 builtin.loclist = require_on_exported_call("telescope.builtin.internal").loclist
 
 --- Lists previously open files, opens on `<cr>`
@@ -329,6 +326,8 @@ builtin.registers = require_on_exported_call("telescope.builtin.internal").regis
 
 --- Lists normal mode keymappings, runs the selected keymap on `<cr>`
 ---@param opts table: options to pass to the picker
+---@field modes table: a list of short-named keymap modes to search (default: { "n", "i", "c", "x" })
+---@field show_plug boolean: if true, the keymaps for which the lhs contains "<Plug>" are also shown (default: true)
 builtin.keymaps = require_on_exported_call("telescope.builtin.internal").keymaps
 
 --- Lists all available filetypes, sets currently open buffer's filetype to selected filetype in Telescope on `<cr>`
@@ -350,11 +349,13 @@ builtin.spell_suggest = require_on_exported_call("telescope.builtin.internal").s
 --- Lists the tag stack for the current window, jumps to tag on `<cr>`
 ---@param opts table: options to pass to the picker
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
 builtin.tagstack = require_on_exported_call("telescope.builtin.internal").tagstack
 
 --- Lists items from Vim's jumplist, jumps to location on `<cr>`
 ---@param opts table: options to pass to the picker
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
 builtin.jumplist = require_on_exported_call("telescope.builtin.internal").jumplist
 
 --
@@ -365,51 +366,41 @@ builtin.jumplist = require_on_exported_call("telescope.builtin.internal").jumpli
 
 --- Lists LSP references for word under the cursor, jumps to reference on `<cr>`
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
+---@field include_declaration boolean: include symbol declaration in the lsp references (default: true)
+---@field include_current_line boolean: include current line (default: false)
+---@field trim_text boolean: trim results text (default: false)
 builtin.lsp_references = require_on_exported_call("telescope.builtin.lsp").references
 
 --- Goto the definition of the word under the cursor, if there's only one, otherwise show all options in Telescope
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field jump_type string: how to goto definition if there is only one, values: "tab", "split", "vsplit", "never"
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
 builtin.lsp_definitions = require_on_exported_call("telescope.builtin.lsp").definitions
 
 --- Goto the definition of the type of the word under the cursor, if there's only one,
 --- otherwise show all options in Telescope
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field jump_type string: how to goto definition if there is only one, values: "tab", "split", "vsplit", "never"
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
 builtin.lsp_type_definitions = require("telescope.builtin.lsp").type_definitions
 
 --- Goto the implementation of the word under the cursor if there's only one, otherwise show all options in Telescope
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field jump_type string: how to goto implementation if there is only one, values: "tab", "split", "vsplit", "never"
 ---@field ignore_filename boolean: dont show filenames (default: true)
+---@field trim_text boolean: trim results text (default: false)
 builtin.lsp_implementations = require_on_exported_call("telescope.builtin.lsp").implementations
-
---- Lists any LSP actions for the word under the cursor which can be triggered with `<cr>`
----@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
-builtin.lsp_code_actions = require_on_exported_call("telescope.builtin.lsp").code_actions
-
---- Lists any LSP actions for a given range, that can be triggered with `<cr>`
----@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
----@field start_line number: where the code action starts (default: handled by :'<,'>Telescope lsp_range_code_actions)
----@field start_line number: where the code action ends (default: handled by :'<,'>Telescope lsp_range_code_actions)
-builtin.lsp_range_code_actions = require_on_exported_call("telescope.builtin.lsp").range_code_actions
 
 --- Lists LSP document symbols in the current buffer
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by type of symbol you want to see (i.e. `:variable:`)
 ---@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field ignore_filename boolean: dont show filenames (default: true)
 ---@field show_line boolean: if true, shows the content of the line the tag is found on (default: false)
 ---@field symbols string|table: filter results by symbol kind(s)
+---@field ignore_symbols string|table: list of symbols to ignore
 ---@field symbol_highlights table: string -> string. Matches symbol with hl_group
 builtin.lsp_document_symbols = require_on_exported_call("telescope.builtin.lsp").document_symbols
 
@@ -418,10 +409,10 @@ builtin.lsp_document_symbols = require_on_exported_call("telescope.builtin.lsp")
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by type of symbol you want to see (i.e. `:variable:`)
 ---@param opts table: options to pass to the picker
 ---@field query string: for what to query the workspace (default: "")
----@field timeout number: timeout for the sync call (default: 10000)
 ---@field ignore_filename boolean: dont show filenames (default: false)
 ---@field show_line boolean: if true, shows the content of the line the tag is found on (default: false)
 ---@field symbols string|table: filter results by symbol kind(s)
+---@field ignore_symbols string|table: list of symbols to ignore
 ---@field symbol_highlights table: string -> string. Matches symbol with hl_group
 builtin.lsp_workspace_symbols = require_on_exported_call("telescope.builtin.lsp").workspace_symbols
 
@@ -432,40 +423,40 @@ builtin.lsp_workspace_symbols = require_on_exported_call("telescope.builtin.lsp"
 ---@field ignore_filename boolean: dont show filenames (default: false)
 ---@field show_line boolean: if true, shows the content of the line the symbol is found on (default: false)
 ---@field symbols string|table: filter results by symbol kind(s)
+---@field ignore_symbols string|table: list of symbols to ignore
 ---@field symbol_highlights table: string -> string. Matches symbol with hl_group
 builtin.lsp_dynamic_workspace_symbols = require_on_exported_call("telescope.builtin.lsp").dynamic_workspace_symbols
 
---- Lists LSP diagnostics for the current buffer
---- - Fields:
----   - `All severity flags can be passed as `string` or `number` as per `:vim.lsp.protocol.DiagnosticSeverity:`
---- - Default keymaps:
----   - `<C-l>`: show autocompletion menu to prefilter your query with the diagnostic you want to see (i.e. `:warning:`)
----@param opts table: options to pass to the picker
----@field severity string|number: filter diagnostics by severity name (string) or id (number)
----@field severity_limit string|number: keep diagnostics equal or more severe wrt severity name (string) or id (number)
----@field severity_bound string|number: keep diagnostics equal or less severe wrt severity name (string) or id (number)
----@field no_sign boolean: hide LspDiagnosticSigns from Results (default: false)
----@field line_width number: set length of diagnostic entry text in Results
-builtin.lsp_document_diagnostics = require_on_exported_call("telescope.builtin.lsp").diagnostics
+--
+--
+-- Diagnostics Pickers
+--
+--
 
---- Lists LSP diagnostics for the current workspace if supported, otherwise searches in all open buffers
+--- Lists diagnostics
 --- - Fields:
----   - `All severity flags can be passed as `string` or `number` as per `:vim.lsp.protocol.DiagnosticSeverity:`
+---   - `All severity flags can be passed as `string` or `number` as per `:vim.diagnostic.severity:`
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query with the diagnostic you want to see (i.e. `:warning:`)
 ---@param opts table: options to pass to the picker
+---@field bufnr string|number: if nil get diagnostics for all open buffers. Use 0 for current buffer
 ---@field severity string|number: filter diagnostics by severity name (string) or id (number)
 ---@field severity_limit string|number: keep diagnostics equal or more severe wrt severity name (string) or id (number)
 ---@field severity_bound string|number: keep diagnostics equal or less severe wrt severity name (string) or id (number)
----@field no_sign boolean: hide LspDiagnosticSigns from Results (default: false)
+---@field root_dir string|boolean: if set to string, get diagnostics only for buffers under this dir otherwise cwd
+---@field no_unlisted boolean: if true, get diagnostics only for listed buffers
+---@field no_sign boolean: hide DiagnosticSigns from Results (default: false)
 ---@field line_width number: set length of diagnostic entry text in Results
-builtin.lsp_workspace_diagnostics = require_on_exported_call("telescope.builtin.lsp").workspace_diagnostics
+---@field namespace number: limit your diagnostics to a specific namespace
+builtin.diagnostics = require_on_exported_call("telescope.builtin.diagnostics").get
 
 local apply_config = function(mod)
   local pickers_conf = require("telescope.config").pickers
   for k, v in pairs(mod) do
     mod[k] = function(opts)
       opts = opts or {}
+      opts.bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
+      opts.winnr = opts.winnr or vim.api.nvim_get_current_win()
       local pconf = pickers_conf[k] or {}
       local defaults = (function()
         if pconf.theme then
