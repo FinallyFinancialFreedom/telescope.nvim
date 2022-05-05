@@ -296,7 +296,9 @@ files.treesitter = function(opts)
     local entries = prepare_match(ts_locals.get_local_nodes(definition))
     for _, entry in ipairs(entries) do
       entry.kind = vim.F.if_nil(entry.kind, "")
-      table.insert(results, entry)
+      if(entry.kind ~="import") then
+        table.insert(results, entry)
+      end
     end
   end
 
